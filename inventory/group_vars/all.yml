@@ -1,1 +1,5 @@
-
+# User and app settings
+app_user: webapp
+app_dir: "/home/{{ app_user }}/app"
+# Using a public simple flask app for demonstration
+repo_url: "https://github.com/gAmadorH/flask-hello-world.git"
