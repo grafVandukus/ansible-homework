@@ -1,1 +1,13 @@
+[Unit]
+Description=My Web App
+After=network.target
+
+[Service]
+User={{ app_user }}
+Group={{ app_user }}
+WorkingDirectory={{ app_dir }}
+ExecStart={{ app_dir }}/venv/bin/gunicorn --workers 3 --bind unix:{{ app_dir }}/app.sock -m 007 wsgi:app
+
+[Install]
+WantedBy=multi-user.target
 
