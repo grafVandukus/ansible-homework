@@ -1,1 +1,153 @@
+---
+- name: Task 1 | Manage Web Application with Tags
+  hosts: web1
+  become: yes
+  tasks:
+    - name: Health check (always run)
+      ansible.builtin.uri:
+        url: http://127.0.0.1
+        status_code: 200
+      tags: always
+      ignore_errors: yes
+
+    - name: Packages Installation
+      tags: packages
+      block:
+        - name: Update apt cache
+          ansible.builtin.apt:
+            update_cache: yes
+          when: ansible_os_family == "Debian"
+          retries: 3
+          delay: 5
+
+        - name: Update yum cache
+          ansible.builtin.yum:
+            update_cache: yes
+          when: ansible_os_family == "RedHat"
+          retries: 3
+          delay: 5
+
+        - name: Install system packages including git
+          ansible.builtin.package:
+            name:
+              - python3
+              - python3-pip
+              - nginx
+              - python3-venv
+              - git
+            state: present
+
+        - name: Create user for the application
+          ansible.builtin.user:
+            name: "{{ app_user }}"
+            shell: /bin/bash
+            create_home: yes
+
+        - name: Ensure app user owns its home directory
+          ansible.builtin.file:
+            path: "/home/{{ app_user }}"
+            owner: "{{ app_user }}"
+            group: "{{ app_user }}"
+            mode: '0755'
+            state: directory
+
+    - name: Application Setup
+      tags: app
+      block:
+        - name: Clone git repository
+          ansible.builtin.git:
+            repo: "{{ repo_url }}"
+            dest: "{{ app_dir }}"
+            version: main
+          become_user: "{{ app_user }}"
+
+        - name: Create virtual environment
+          ansible.builtin.command:
+            cmd: "python3 -m venv {{ app_dir }}/venv"
+            creates: "{{ app_dir }}/venv/bin/pip"
+          become_user: "{{ app_user }}"
+
+        - name: Install dependencies
+          ansible.builtin.pip:
+            requirements: "{{ app_dir }}/requirements.txt"
+            virtualenv: "{{ app_dir }}/venv"
+          become_user: "{{ app_user }}"
+
+    - name: Configuration
+      tags: config
+      block:
+        - name: Copy nginx config
+          ansible.builtin.template:
+            src: ../templates/nginx.conf.j2
+            dest: /etc/nginx/sites-available/webapp
+
+        - name: Enable nginx site
+          ansible.builtin.file:
+            src: /etc/nginx/sites-available/webapp
+            dest: /etc/nginx/sites-enabled/webapp
+            state: link
+            force: yes
+
+        - name: Copy systemd service config
+          ansible.builtin.template:
+            src: ../templates/app.service.j2
+            dest: /etc/systemd/system/webapp.service
+
+        - name: Reload systemd
+          ansible.builtin.systemd:
+            daemon_reload: yes
+
+
+    - name: Service Management
+      tags: services
+      block:
+        - name: Start/Restart application service
+          ansible.builtin.systemd:
+            name: webapp
+            state: restarted
+            enabled: yes
+
+        - name: Start/Restart nginx
+          ansible.builtin.systemd:
+            name: nginx
+            state: restarted
+            enabled: yes
+
+    - name: Cleanup
+      tags: never
+      block:
+        - name: Stop services
+          ansible.builtin.systemd:
+            name: "{{ item }}"
+            state: stopped
+            enabled: no
+          loop:
+            - webapp
+            - nginx
+
+        - name: Remove application directory
+          ansible.builtin.file:
+            path: "{{ app_dir }}"
+            state: absent
+
+        - name: Remove nginx site
+          ansible.builtin.file:
+            path: "/etc/nginx/sites-enabled/webapp"
+            state: absent
+
+        - name: Remove nginx config
+          ansible.builtin.file:
+            path: "/etc/nginx/sites-available/webapp"
+            state: absent
+
+        - name: Remove systemd service file
+          ansible.builtin.file:
+            path: /etc/systemd/system/webapp.service
+            state: absent
+
+        - name: Remove user
+          ansible.builtin.user:
+            name: "{{ app_user }}"
+            state: absent
+            remove: yes
 
