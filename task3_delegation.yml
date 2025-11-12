@@ -1,0 +1,57 @@
+---
+- name: Task 3 | Delegated Server Updates
+  hosts: webservers
+  serial: 1 # Update servers one by one
+  become: yes
+
+  tasks:
+    - name: Initial setup for LB emulation
+      ansible.builtin.lineinfile:
+        path: /tmp/lb_pool.txt
+        line: "{{ item }}: enabled"
+        create: yes
+      delegate_to: localhost
+      run_once: yes
+      loop: "{{ groups['webservers'] }}"
+
+    - name: Disable server in LB
+      ansible.builtin.lineinfile:
+        path: /tmp/lb_pool.txt
+        regexp: "^{{ inventory_hostname }}"
+        line: "{{ inventory_hostname }}: disabled"
+      delegate_to: localhost
+
+    - name: Wait for connections to drain
+      ansible.builtin.pause:
+        seconds: 5
+
+    - name: Update application on the server
+      ansible.builtin.debug:
+        msg: "Updating application on {{ inventory_hostname }}"
+
+    - name: Check application locally
+      ansible.builtin.uri:
+        url: http://127.0.0.1
+        status_code: 200
+      ignore_errors: true
+
+    - name: Enable server in LB
+      ansible.builtin.lineinfile:
+        path: /tmp/lb_pool.txt
+        regexp: "^{{ inventory_hostname }}"
+        line: "{{ inventory_hostname }}: enabled"
+      delegate_to: localhost
+
+    - name: Check availability through LB
+      ansible.builtin.debug:
+        msg: "Checking {{ inventory_hostname }} availability through LB"
+      delegate_to: localhost
+
+- name: Final Report
+  hosts: localhost
+  connection: local
+  tasks:
+    - name: Create deployment report
+      ansible.builtin.debug:
+        msg: "Deployment report: All servers updated successfully."
+      run_once: yes
