@@ -1,0 +1,110 @@
+---
+- name: Task 2 | Safe Application Update with Blocks
+  hosts: webservers
+  become: yes
+  vars:
+    backup_dir: "/tmp/app_backups"
+    db_backup_file: "{{ backup_dir }}/db_backup.sql"
+    simulate_error: false # Set to true to test error handling
+
+  tasks:
+    - name: Create backup directory
+      ansible.builtin.file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Main update process
+      block:
+        - name: Preparation Block
+          block:
+            - name: Create database backup
+              ansible.builtin.debug:
+                msg: "Simulating database backup to {{ db_backup_file }}"
+
+            - name: Save current code version (git commit)
+              ansible.builtin.debug:
+                msg: "Simulating git commit of the current version"
+
+            - name: Check service availability
+              ansible.builtin.uri:
+                url: http://127.0.0.1
+                status_code: 200
+              ignore_errors: true # It might be down before the first run
+
+          rescue:
+            - name: Notify about preparation error
+              ansible.builtin.debug:
+                msg: "ERROR: Preparation failed! Stopping execution."
+            - name: Stop execution
+              ansible.builtin.meta: end_play
+
+        - name: Update Block
+          block:
+            - name: Stop application
+              ansible.builtin.systemd:
+                name: webapp
+                state: stopped
+
+            - name: Update code from git
+              ansible.builtin.git:
+                repo: "{{ repo_url }}"
+                dest: "{{ app_dir }}"
+                version: "{{ 'non-existent-branch' if simulate_error else 'main' }}"
+              become_user: "{{ app_user }}"
+
+            - name: Install dependencies
+              ansible.builtin.pip:
+                requirements: "{{ app_dir }}/requirements.txt"
+                virtualenv: "{{ app_dir }}/venv"
+              become_user: "{{ app_user }}"
+
+            - name: Run database migrations
+              ansible.builtin.debug:
+                msg: "Simulating database migrations"
+
+            - name: Start application
+              ansible.builtin.systemd:
+                name: webapp
+                state: started
+
+            - name: Health check after update
+              ansible.builtin.uri:
+                url: http://127.0.0.1
+                status_code: 200
+
+          rescue:
+            - name: Log error
+              ansible.builtin.debug:
+                msg: "ERROR: Update failed. Rolling back..."
+
+            - name: Restore previous code version
+              ansible.builtin.debug:
+                msg: "Simulating rollback to the previous git commit"
+
+            - name: Restore DB from backup
+              ansible.builtin.debug:
+                msg: "Simulating database restore from {{ db_backup_file }}"
+
+            - name: Restart application after rollback
+              ansible.builtin.systemd:
+                name: webapp
+                state: restarted
+
+            - name: Notify about rollback
+              ansible.builtin.debug:
+                msg: "Rollback complete. Application restored to the previous state."
+
+          always:
+            - name: Gather logs
+              ansible.builtin.debug:
+                msg: "Gathering deployment logs"
+
+            - name: Record deployment info
+              ansible.builtin.debug:
+                msg: "Recording deployment information"
+
+            - name: Clean up temporary files
+              ansible.builtin.file:
+                path: "{{ backup_dir }}"
+                state: absent
