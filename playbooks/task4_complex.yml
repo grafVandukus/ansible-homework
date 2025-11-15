@@ -1,0 +1,91 @@
+---
+- name: Task 4 | Complex CI/CD Pipeline for Microservices
+  hosts: webservers
+  become: yes
+  vars:
+    version: "v1.0.0" # Can be overridden with -e "version=..."
+
+  tasks:
+    - name: Pre-deploy checks and backups
+      tags: pre-deploy
+      block:
+        - name: Run pre-deploy checks
+          ansible.builtin.debug:
+            msg: "Running pre-deploy checks..."
+        - name: Create backups
+          ansible.builtin.debug:
+            msg: "Creating backups..."
+
+    - name: Deploy service1
+      tags: deploy-service1
+      block:
+        - name: Deploy service1 version {{ version }}
+          ansible.builtin.debug:
+            msg: "Deploying service1 version {{ version }}"
+      rescue:
+        - name: Rollback service1
+          ansible.builtin.debug:
+            msg: "Rollback service1..."
+
+    - name: Deploy service2
+      tags: deploy-service2
+      block:
+        - name: Deploy service2 version {{ version }}
+          ansible.builtin.debug:
+            msg: "Deploying service2 version {{ version }}"
+      rescue:
+        - name: Rollback service2
+          ansible.builtin.debug:
+            msg: "Rollback service2..."
+
+    - name: Deploy database
+      tags: deploy-db
+      block:
+        - name: Deploy database changes
+          ansible.builtin.debug:
+            msg: "Deploying database changes"
+      rescue:
+        - name: Rollback all services due to DB failure
+          ansible.builtin.debug:
+            msg: "Rolling back all services due to DB failure..."
+          run_once: true
+          delegate_to: localhost
+
+    - name: Configure Load Balancer
+      tags: deploy-lb
+      delegate_to: localhost
+      run_once: true
+      block:
+        - name: Configure nginx as load balancer
+          ansible.builtin.debug:
+            msg: "Configuring nginx as load balancer"
+
+    - name: Post-deploy checks
+      tags: post-deploy
+      delegate_to: localhost
+      run_once: true
+      block:
+        - name: Run health checks on all services
+          ansible.builtin.debug:
+            msg: "Running health checks on all services..."
+
+    - name: Full Rollback
+      tags: rollback
+      run_once: true
+      delegate_to: localhost
+      block:
+        - name: Rollback all services
+          ansible.builtin.debug:
+            msg: "Rolling back all services..."
+
+  post_tasks:
+    - name: Cleanup and Logging
+      run_once: true
+      delegate_to: localhost
+      block:
+        - name: Cleanup temporary files
+          ansible.builtin.debug:
+            msg: "Cleaning up temporary files..."
+        - name: Send notifications
+          ansible.builtin.debug:
+            msg: "Sending notifications..."
